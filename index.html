@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Draft Simulator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f1115;
+    color: #e8eaed;
+    line-height: 1.5;
+    padding: 20px;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 24px; margin-bottom: 4px; letter-spacing: -0.5px; }
+  h2 { font-size: 18px; margin: 24px 0 12px; }
+  .sub { color: #9aa0a6; font-size: 14px; margin-bottom: 24px; }
+  .card {
+    background: #1a1d24;
+    border: 1px solid #2a2e37;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  label { display: block; font-size: 13px; color: #9aa0a6; margin-bottom: 6px; font-weight: 500; }
+  input[type=text], input[type=number] {
+    width: 100%;
+    background: #0f1115;
+    border: 1px solid #2a2e37;
+    border-radius: 8px;
+    color: #e8eaed;
+    padding: 10px 12px;
+    font-size: 15px;
+    margin-bottom: 12px;
+  }
+  input:focus { outline: none; border-color: #5b8def; }
+  button {
+    background: #5b8def;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 18px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  button:hover { background: #4a7ce0; }
+  button:disabled { background: #3a3e47; color: #777; cursor: not-allowed; }
+  button.secondary { background: #2a2e37; }
+  button.secondary:hover { background: #363b45; }
+  .toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+  .toggle button {
+    flex: 1;
+    background: #0f1115;
+    border: 1px solid #2a2e37;
+    color: #9aa0a6;
+  }
+  .toggle button.active { background: #5b8def; color: #fff; border-color: #5b8def; }
+  .rank-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .rank-num { width: 28px; text-align: right; color: #9aa0a6; font-size: 13px; flex-shrink: 0; }
+  .rank-row input { margin-bottom: 0; }
+  .link-box {
+    background: #0f1115;
+    border: 1px solid #2a2e37;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: monospace;
+    font-size: 13px;
+    word-break: break-all;
+    margin-bottom: 12px;
+    color: #7cc4ff;
+  }
+  .status-list { list-style: none; }
+  .status-list li {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid #2a2e37; font-size: 15px;
+  }
+  .status-list li:last-child { border: none; }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
+  .badge.done { background: #1e3a2a; color: #6ee7a0; }
+  .badge.waiting { background: #3a2e1e; color: #e7c26e; }
+  .results-round { margin-bottom: 20px; }
+  .results-round h3 { font-size: 14px; color: #9aa0a6; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .pick {
+    display: flex; align-items: center; gap: 12px;
+    background: #0f1115; border: 1px solid #2a2e37; border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 6px;
+  }
+  .pick-num { background: #2a2e37; color: #9aa0a6; font-size: 12px; font-weight: 600; width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .pick-player { font-weight: 600; flex: 1; }
+  .pick-owner { color: #9aa0a6; font-size: 13px; }
+  .row2 { display: flex; gap: 12px; }
+  .row2 > div { flex: 1; }
+  .hint { font-size: 13px; color: #9aa0a6; margin-top: -4px; margin-bottom: 12px; }
+  .err { color: #ff7b7b; font-size: 14px; margin-bottom: 12px; }
+  .warn { background: #3a2e1e; color: #e7c26e; border-radius: 8px; padding: 12px; font-size: 14px; margin-bottom: 16px; }
+  .hidden { display: none; }
+  .spinner { text-align: center; padding: 40px; color: #9aa0a6; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .order-list { list-style: none; margin-top: 8px; }
+  .order-list li { padding: 6px 0; font-size: 15px; border-bottom: 1px solid #2a2e37; }
+  .order-list li:last-child { border: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="app"><div class="spinner">Loading…</div></div>
+</div>
+
+<!-- Firebase SDK (modular, via CDN) -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ============================================================
+//  PASTE YOUR FIREBASE CONFIG HERE
+//  (Firebase console → Project settings → Your apps → Config)
+// ============================================================
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+// ============================================================
+
+let db = null;
+let configOK = false;
+try {
+  if (!firebaseConfig.apiKey.startsWith("YOUR_")) {
+    const fbApp = initializeApp(firebaseConfig);
+    db = getFirestore(fbApp);
+    configOK = true;
+  }
+} catch (e) { console.error("Firebase init failed", e); }
+
+// ---------- Storage helpers (Firestore-backed) ----------
+async function sGet(key) {
+  if (!db) return null;
+  try {
+    const snap = await getDoc(doc(db, "drafts", key));
+    return snap.exists() ? snap.data().payload : null;
+  } catch (e) { console.error(e); return null; }
+}
+async function sSet(key, val) {
+  if (!db) return null;
+  try {
+    await setDoc(doc(db, "drafts", key), { payload: val });
+    return true;
+  } catch (e) { console.error(e); return null; }
+}
+
+// ---------- URL / draft id ----------
+function getParams() {
+  const h = window.location.hash.slice(1);
+  const p = new URLSearchParams(h);
+  return { draft: p.get('draft'), player: p.get('player') };
+}
+function buildLink(draftId, playerIdx) {
+  const base = window.location.href.split('#')[0];
+  let h = 'draft=' + draftId;
+  if (playerIdx != null) h += '&player=' + playerIdx;
+  return base + '#' + h;
+}
+function newId() { return Math.random().toString(36).slice(2, 9); }
+
+const app = document.getElementById('app');
+
+// ---------- Router ----------
+async function route() {
+  if (!configOK) return renderNeedsConfig();
+  const { draft, player } = getParams();
+  if (!draft) return renderSetup();
+  const cfg = await sGet(draft);
+  if (!cfg) { app.innerHTML = '<div class="card"><p class="err">Draft not found.</p><button onclick="goHome()">Create a new draft</button></div>'; return; }
+  if (player != null) return renderPlayerRankings(draft, parseInt(player), cfg);
+  return renderAdmin(draft, cfg);
+}
+
+function renderNeedsConfig() {
+  app.innerHTML = `
+    <h1>Draft Simulator</h1>
+    <div class="warn">This app needs your Firebase config before it will work. Open <code>index.html</code> and paste your project config into the marked block near the top of the &lt;script&gt; section, then reload.</div>
+    <div class="card">
+      <p class="hint">Setup steps are in the README. Once your config is in and Firestore is created, the app runs automatically.</p>
+    </div>`;
+}
+
+function goHome() { window.location.hash = ''; route(); }
+
+// ---------- Setup screen ----------
+function renderSetup() {
+  app.innerHTML = `
+    <h1>Draft Simulator</h1>
+    <p class="sub">Create a draft, share the links, and auto-draft based on everyone's rankings.</p>
+    <div class="card">
+      <div class="row2">
+        <div>
+          <label>Number of players</label>
+          <input type="number" id="numPlayers" min="2" max="30" value="4">
+        </div>
+        <div>
+          <label>Rounds (picks per player)</label>
+          <input type="number" id="numRounds" min="1" max="25" value="5">
+        </div>
+      </div>
+      <label>Draft type</label>
+      <div class="toggle" id="typeToggle">
+        <button class="active" data-type="snake">Snake</button>
+        <button data-type="normal">Normal</button>
+      </div>
+      <p class="hint">Snake reverses order each round (1→N, N→1). Normal keeps the same order every round.</p>
+      <div id="setupErr"></div>
+      <button onclick="createDraft()">Create Draft</button>
+    </div>`;
+  let type = 'snake';
+  document.querySelectorAll('#typeToggle button').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('#typeToggle button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      type = b.dataset.type;
+    };
+  });
+  window._draftType = () => type;
+}
+
+async function createDraft() {
+  const n = parseInt(document.getElementById('numPlayers').value);
+  const rounds = parseInt(document.getElementById('numRounds').value);
+  const type = window._draftType();
+  const errEl = document.getElementById('setupErr');
+  if (!n || n < 2 || n > 30) { errEl.innerHTML = '<p class="err">Enter 2–30 players.</p>'; return; }
+  if (!rounds || rounds < 1 || rounds > 25) { errEl.innerHTML = '<p class="err">Enter 1–25 rounds.</p>'; return; }
+  const id = newId();
+  const cfg = {
+    id, type, numPlayers: n, rounds,
+    players: Array.from({ length: n }, (_, i) => ({ name: 'Player ' + (i + 1), submitted: false, rankings: [] })),
+    started: false, order: null, results: null
+  };
+  const ok = await sSet(id, cfg);
+  if (!ok) { errEl.innerHTML = '<p class="err">Could not save to Firestore. Check your config and rules.</p>'; return; }
+  window.location.hash = 'draft=' + id;
+  route();
+}
+
+// ---------- Admin screen ----------
+async function renderAdmin(draftId, cfg) {
+  const playerLinks = cfg.players.map((p, i) =>
+    `<li><span>${escapeHtml(p.name)}</span>
+      <span>
+        <span class="badge ${p.submitted ? 'done' : 'waiting'}">${p.submitted ? 'Submitted' : 'Waiting'}</span>
+      </span></li>`).join('');
+
+  const linkRows = cfg.players.map((p, i) =>
+    `<div class="rank-row">
+       <span class="rank-num">${i + 1}</span>
+       <input type="text" readonly value="${buildLink(draftId, i)}" onclick="this.select()">
+       <button class="secondary" onclick="copyLink('${buildLink(draftId, i)}', this)">Copy</button>
+     </div>`).join('');
+
+  const allSubmitted = cfg.players.every(p => p.submitted);
+  const submittedCount = cfg.players.filter(p => p.submitted).length;
+
+  app.innerHTML = `
+    <h1>Draft Control</h1>
+    <p class="sub">${cfg.type === 'snake' ? 'Snake' : 'Normal'} draft · ${cfg.numPlayers} players · ${cfg.rounds} rounds</p>
+
+    <div class="card">
+      <h2 style="margin-top:0">Player links</h2>
+      <p class="hint">Send each player their own link so they can enter rankings.</p>
+      ${linkRows}
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Status (${submittedCount}/${cfg.numPlayers} submitted)</h2>
+      <ul class="status-list">${playerLinks}</ul>
+      <div class="btn-row" style="margin-top:16px">
+        <button class="secondary" onclick="route()">Refresh</button>
+        <button onclick="runDraft('${draftId}')" ${allSubmitted ? '' : 'disabled'}>
+          ${cfg.started ? 'Re-run Draft' : 'Randomize & Run Draft'}
+        </button>
+      </div>
+      ${allSubmitted ? '' : '<p class="hint" style="margin-top:10px">Run unlocks once all players have submitted.</p>'}
+    </div>
+
+    ${cfg.started ? renderResults(cfg) : ''}
+  `;
+}
+
+// ---------- Player rankings screen ----------
+async function renderPlayerRankings(draftId, playerIdx, cfg) {
+  const p = cfg.players[playerIdx];
+  if (!p) { app.innerHTML = '<div class="card"><p class="err">Invalid player.</p></div>'; return; }
+
+  if (p.submitted) {
+    const rows = p.rankings.map((r, i) => r ? `<div class="rank-row"><span class="rank-num">${i+1}</span><span>${escapeHtml(r)}</span></div>` : '').join('');
+    app.innerHTML = `
+      <h1>Thanks, ${escapeHtml(p.name)}!</h1>
+      <p class="sub">Your rankings are submitted. You can update them below if the draft hasn't run yet.</p>
+      <div class="card">${rows || '<p class="hint">No rankings entered.</p>'}</div>
+      ${cfg.started ? '' : `<button class="secondary" onclick="editRankings('${draftId}',${playerIdx})">Edit rankings</button>`}
+    `;
+    return;
+  }
+  buildRankingForm(draftId, playerIdx, cfg, p);
+}
+
+function editRankings(draftId, playerIdx) {
+  sGet(draftId).then(cfg => {
+    const p = cfg.players[playerIdx];
+    buildRankingForm(draftId, playerIdx, cfg, p);
+  });
+}
+
+function buildRankingForm(draftId, playerIdx, cfg, p) {
+  const existing = p.rankings || [];
+  const rows = Array.from({ length: 25 }, (_, i) =>
+    `<div class="rank-row">
+       <span class="rank-num">${i + 1}</span>
+       <input type="text" id="rank_${i}" value="${escapeHtml(existing[i] || '')}" placeholder="Choice ${i + 1}">
+     </div>`).join('');
+
+  app.innerHTML = `
+    <h1>Enter your rankings</h1>
+    <p class="sub">You're <strong>${escapeHtml(p.name)}</strong>. Rank your top 25 in order (1 = most wanted). No fields required — leave blanks if you like.</p>
+    <div class="card">
+      <label>Your name (optional)</label>
+      <input type="text" id="playerName" value="${escapeHtml(p.name)}" placeholder="Your name">
+      <h2>Top 25</h2>
+      ${rows}
+      <div id="rankErr"></div>
+      <button onclick="submitRankings('${draftId}',${playerIdx})">Submit Rankings</button>
+    </div>
+  `;
+}
+
+async function submitRankings(draftId, playerIdx) {
+  const cfg = await sGet(draftId);
+  if (!cfg) return;
+  if (cfg.started) { document.getElementById('rankErr').innerHTML = '<p class="err">The draft already ran — rankings are locked.</p>'; return; }
+  const rankings = [];
+  for (let i = 0; i < 25; i++) {
+    const v = document.getElementById('rank_' + i).value.trim();
+    rankings.push(v);
+  }
+  const name = document.getElementById('playerName').value.trim() || ('Player ' + (playerIdx + 1));
+  cfg.players[playerIdx].rankings = rankings;
+  cfg.players[playerIdx].name = name;
+  cfg.players[playerIdx].submitted = true;
+  await sSet(draftId, cfg);
+  route();
+}
+
+// ---------- Draft engine ----------
+async function runDraft(draftId) {
+  const cfg = await sGet(draftId);
+  if (!cfg) return;
+  if (!cfg.players.every(p => p.submitted)) return;
+
+  const order = shuffle(cfg.players.map((_, i) => i));
+
+  const picks = [];
+  for (let round = 0; round < cfg.rounds; round++) {
+    let seq = order.slice();
+    if (cfg.type === 'snake' && round % 2 === 1) seq = seq.slice().reverse();
+    for (const pIdx of seq) picks.push({ round: round + 1, player: pIdx });
+  }
+
+  const drafted = new Set();
+  const results = [];
+  for (let i = 0; i < picks.length; i++) {
+    const pk = picks[i];
+    const ranks = cfg.players[pk.player].rankings.filter(r => r && r.trim());
+    let chosen = null;
+    for (const r of ranks) {
+      if (!drafted.has(r.trim().toLowerCase())) { chosen = r.trim(); break; }
+    }
+    if (chosen) drafted.add(chosen.toLowerCase());
+    results.push({
+      overall: i + 1,
+      round: pk.round,
+      player: pk.player,
+      pick: chosen || '(no available ranked choice)'
+    });
+  }
+
+  cfg.started = true;
+  cfg.order = order;
+  cfg.results = results;
+  await sSet(draftId, cfg);
+  route();
+}
+
+function renderResults(cfg) {
+  const orderList = cfg.order.map((pIdx, i) =>
+    `<li>${i + 1}. ${escapeHtml(cfg.players[pIdx].name)}</li>`).join('');
+
+  let html = `<div class="card">
+    <h2 style="margin-top:0">Randomized draft order</h2>
+    <ul class="order-list">${orderList}</ul>
+  </div>`;
+
+  html += '<div class="card"><h2 style="margin-top:0">Results</h2>';
+  const byRound = {};
+  cfg.results.forEach(r => { (byRound[r.round] = byRound[r.round] || []).push(r); });
+  Object.keys(byRound).sort((a, b) => a - b).forEach(round => {
+    html += `<div class="results-round"><h3>Round ${round}</h3>`;
+    byRound[round].forEach(r => {
+      html += `<div class="pick">
+        <span class="pick-num">${r.overall}</span>
+        <span class="pick-player">${escapeHtml(r.pick)}</span>
+        <span class="pick-owner">${escapeHtml(cfg.players[r.player].name)}</span>
+      </div>`;
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// ---------- Utils ----------
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function copyLink(link, btn) {
+  navigator.clipboard.writeText(link).then(() => {
+    const t = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = t, 1200);
+  }).catch(() => {});
+}
+
+// Expose functions used by inline onclick handlers
+window.route = route;
+window.goHome = goHome;
+window.createDraft = createDraft;
+window.submitRankings = submitRankings;
+window.editRankings = editRankings;
+window.runDraft = runDraft;
+window.copyLink = copyLink;
+
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>
