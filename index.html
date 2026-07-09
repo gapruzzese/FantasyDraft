@@ -202,6 +202,8 @@ function renderSetup() {
     <h1>Draft Simulator</h1>
     <p class="sub">Create a draft, share the links, and auto-draft based on everyone's rankings.</p>
     <div class="card">
+      <label>League name</label>
+      <input type="text" id="leagueName" placeholder="e.g. Survivor Season 47 League">
       <div class="row2">
         <div>
           <label>Number of players</label>
@@ -218,6 +220,9 @@ function renderSetup() {
         <button data-type="normal">Normal</button>
       </div>
       <p class="hint">Snake reverses order each round (1→N, N→1). Normal keeps the same order every round.</p>
+      <label>Draft options</label>
+      <textarea id="draftOptions" rows="8" placeholder="Paste the full list of draftable options, one per line" style="width:100%;background:#0f1115;border:1px solid #2a2e37;border-radius:8px;color:#e8eaed;padding:10px 12px;font-size:15px;margin-bottom:4px;font-family:inherit;resize:vertical;"></textarea>
+      <p class="hint">Players will pick from this exact list via a dropdown, so there's no risk of typos or mismatched spelling/capitalization.</p>
       <div id="setupErr"></div>
       <button onclick="createDraft()">Create Draft</button>
     </div>`;
@@ -232,16 +237,33 @@ function renderSetup() {
   window._draftType = () => type;
 }
 
+function parseOptionsText(text) {
+  const seen = new Set();
+  const out = [];
+  String(text || '').split(/\r?\n/).forEach(line => {
+    const v = line.trim();
+    if (!v) return;
+    const key = v.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(v);
+  });
+  return out;
+}
+
 async function createDraft() {
   const n = parseInt(document.getElementById('numPlayers').value);
   const rounds = parseInt(document.getElementById('numRounds').value);
   const type = window._draftType();
+  const leagueName = document.getElementById('leagueName').value.trim();
+  const options = parseOptionsText(document.getElementById('draftOptions').value);
   const errEl = document.getElementById('setupErr');
   if (!n || n < 2 || n > 30) { errEl.innerHTML = '<p class="err">Enter 2–30 players.</p>'; return; }
   if (!rounds || rounds < 1 || rounds > 25) { errEl.innerHTML = '<p class="err">Enter 1–25 rounds.</p>'; return; }
+  if (options.length === 0) { errEl.innerHTML = '<p class="err">Paste at least one draft option.</p>'; return; }
   const id = newId();
   const cfg = {
-    id, type, numPlayers: n, rounds,
+    id, leagueName, type, numPlayers: n, rounds, options,
     players: Array.from({ length: n }, (_, i) => ({ name: 'Player ' + (i + 1), submitted: false, rankings: [] })),
     started: false, order: null, results: null
   };
@@ -268,9 +290,24 @@ async function renderAdmin(draftId, cfg) {
 
   const allSubmitted = cfg.players.every(p => p.submitted);
   const submittedCount = cfg.players.filter(p => p.submitted).length;
+  const options = cfg.options || [];
+
+  const optionsCard = cfg.started
+    ? `<div class="card">
+         <h2 style="margin-top:0">Draft options (${options.length})</h2>
+         <p class="hint">Locked now that the draft has run.</p>
+         <div class="link-box" style="color:#e8eaed">${options.map(escapeHtml).join(', ') || '<span class="hint">None</span>'}</div>
+       </div>`
+    : `<div class="card">
+         <h2 style="margin-top:0">Draft options (${options.length})</h2>
+         <p class="hint">One per line. Editing this after players have submitted rankings won't retroactively fix their picks.</p>
+         <textarea id="draftOptionsEdit" rows="8" style="width:100%;background:#0f1115;border:1px solid #2a2e37;border-radius:8px;color:#e8eaed;padding:10px 12px;font-size:15px;margin-bottom:12px;font-family:inherit;resize:vertical;">${escapeHtml(options.join('\n'))}</textarea>
+         <div id="optionsErr"></div>
+         <button class="secondary" onclick="saveOptions('${draftId}')">Save options</button>
+       </div>`;
 
   app.innerHTML = `
-    <h1>Draft Control</h1>
+    <h1>${escapeHtml(cfg.leagueName) || 'Draft Control'}</h1>
     <p class="sub">${cfg.type === 'snake' ? 'Snake' : 'Normal'} draft · ${cfg.numPlayers} players · ${cfg.rounds} rounds</p>
 
     <div class="card">
@@ -278,6 +315,8 @@ async function renderAdmin(draftId, cfg) {
       <p class="hint">Send each player their own link so they can enter rankings.</p>
       ${linkRows}
     </div>
+
+    ${optionsCard}
 
     <div class="card">
       <h2 style="margin-top:0">Status (${submittedCount}/${cfg.numPlayers} submitted)</h2>
@@ -293,6 +332,19 @@ async function renderAdmin(draftId, cfg) {
 
     ${cfg.started ? renderResults(cfg) : ''}
   `;
+}
+
+async function saveOptions(draftId) {
+  const cfg = await sGet(draftId);
+  if (!cfg) return;
+  const errEl = document.getElementById('optionsErr');
+  if (cfg.started) { errEl.innerHTML = '<p class="err">The draft already ran — options are locked.</p>'; return; }
+  const options = parseOptionsText(document.getElementById('draftOptionsEdit').value);
+  if (options.length === 0) { errEl.innerHTML = '<p class="err">Enter at least one draft option.</p>'; return; }
+  cfg.options = options;
+  const ok = await sSet(draftId, cfg);
+  if (!ok) { errEl.innerHTML = '<p class="err">Could not save. Try again.</p>'; return; }
+  route();
 }
 
 // ---------- Player rankings screen ----------
@@ -322,32 +374,70 @@ function editRankings(draftId, playerIdx) {
 
 function buildRankingForm(draftId, playerIdx, cfg, p) {
   const existing = p.rankings || [];
-  const rows = Array.from({ length: 25 }, (_, i) =>
-    `<div class="rank-row">
+  const options = cfg.options || [];
+  const useDropdown = options.length > 0;
+  const numRows = useDropdown ? Math.min(options.length, 25) : 25;
+
+  const rows = Array.from({ length: numRows }, (_, i) => {
+    if (!useDropdown) {
+      return `<div class="rank-row">
+         <span class="rank-num">${i + 1}</span>
+         <input type="text" id="rank_${i}" value="${escapeHtml(existing[i] || '')}" placeholder="Choice ${i + 1}">
+       </div>`;
+    }
+    const opts = options.map(o => `<option value="${escapeHtml(o)}" ${existing[i] === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('');
+    return `<div class="rank-row">
        <span class="rank-num">${i + 1}</span>
-       <input type="text" id="rank_${i}" value="${escapeHtml(existing[i] || '')}" placeholder="Choice ${i + 1}">
-     </div>`).join('');
+       <select id="rank_${i}" class="rank-select" onchange="updateDropdownOptions()">
+         <option value="">— none —</option>
+         ${opts}
+       </select>
+     </div>`;
+  }).join('');
 
   app.innerHTML = `
     <h1>Enter your rankings</h1>
-    <p class="sub">You're <strong>${escapeHtml(p.name)}</strong>. Rank your top 25 in order (1 = most wanted). No fields required — leave blanks if you like.</p>
+    <p class="sub">You're <strong>${escapeHtml(p.name)}</strong>${cfg.leagueName ? ` in <strong>${escapeHtml(cfg.leagueName)}</strong>` : ''}. Rank your top ${numRows} in order (1 = most wanted).${useDropdown ? ' Pick from the list — no fields required.' : ' No fields required — leave blanks if you like.'}</p>
     <div class="card">
       <label>Your name (optional)</label>
       <input type="text" id="playerName" value="${escapeHtml(p.name)}" placeholder="Your name">
-      <h2>Top 25</h2>
+      <h2>Top ${numRows}</h2>
       ${rows}
       <div id="rankErr"></div>
       <button onclick="submitRankings('${draftId}',${playerIdx})">Submit Rankings</button>
     </div>
   `;
+
+  if (useDropdown) {
+    // add select styling to match text inputs, then apply initial disabled state
+    document.querySelectorAll('.rank-select').forEach(sel => {
+      sel.style.cssText = 'width:100%;background:#0f1115;border:1px solid #2a2e37;border-radius:8px;color:#e8eaed;padding:10px 12px;font-size:15px;margin-bottom:0;';
+    });
+    updateDropdownOptions();
+  }
+}
+
+// Disable an option in every dropdown once it's chosen in another dropdown,
+// so the same draft option can't accidentally be ranked twice.
+function updateDropdownOptions() {
+  const selects = Array.from(document.querySelectorAll('.rank-select'));
+  const chosen = selects.map(s => s.value).filter(v => v);
+  selects.forEach(sel => {
+    Array.from(sel.options).forEach(opt => {
+      if (!opt.value) return;
+      opt.disabled = chosen.includes(opt.value) && sel.value !== opt.value;
+    });
+  });
 }
 
 async function submitRankings(draftId, playerIdx) {
   const cfg = await sGet(draftId);
   if (!cfg) return;
   if (cfg.started) { document.getElementById('rankErr').innerHTML = '<p class="err">The draft already ran — rankings are locked.</p>'; return; }
+  const useDropdown = (cfg.options || []).length > 0;
+  const numRows = useDropdown ? Math.min(cfg.options.length, 25) : 25;
   const rankings = [];
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < numRows; i++) {
     const v = document.getElementById('rank_' + i).value.trim();
     rankings.push(v);
   }
@@ -470,6 +560,8 @@ window.submitRankings = submitRankings;
 window.editRankings = editRankings;
 window.runDraft = runDraft;
 window.copyLink = copyLink;
+window.saveOptions = saveOptions;
+window.updateDropdownOptions = updateDropdownOptions;
 
 window.addEventListener('hashchange', route);
 route();
