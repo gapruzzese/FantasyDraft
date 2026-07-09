@@ -423,6 +423,24 @@ function renderResults(cfg) {
     html += '</div>';
   });
   html += '</div>';
+
+  html += '<div class="card"><h2 style="margin-top:0">Full Rosters</h2>';
+  const byPlayer = {};
+  cfg.results.forEach(r => { (byPlayer[r.player] = byPlayer[r.player] || []).push(r); });
+  cfg.order.forEach(pIdx => {
+    const picks = (byPlayer[pIdx] || []).slice().sort((a, b) => a.overall - b.overall);
+    html += `<div class="results-round"><h3>${escapeHtml(cfg.players[pIdx].name)}</h3>`;
+    picks.forEach(r => {
+      html += `<div class="pick">
+        <span class="pick-num">${r.overall}</span>
+        <span class="pick-player">${escapeHtml(r.pick)}</span>
+        <span class="pick-owner">Rd ${r.round}</span>
+      </div>`;
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+
   return html;
 }
 
