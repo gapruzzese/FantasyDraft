@@ -129,6 +129,8 @@
   .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px; padding: 3px 10px 3px 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; }
   .chip button { background: none; border: none; color: var(--dim); padding: 0; font-size: 15px; line-height: 1; cursor: pointer; }
   .chip button:hover { color: var(--neg); }
+  .linkbtn { background: none; border: none; color: var(--dim); font-size: 12px; font-family: var(--mono); cursor: pointer; padding: 2px 4px; text-decoration: underline; }
+  .linkbtn:hover { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -283,7 +285,7 @@ function renderDraftHome(draftId, cfg){
   const all=submitted===cfg.players.length;
   const link=draftLink(draftId);
 
-  const statusRows=cfg.players.map(p=>`<li><span>${escapeHtml(p.name)}</span><span class="badge ${p.submitted?'done':'waiting'}">${p.submitted?'Submitted':'Waiting'}</span></li>`).join('');
+  const statusRows=cfg.players.map((p,i)=>`<li><span>${escapeHtml(p.name)}${p.pin?' <span style="color:var(--dim);font-size:12px">🔒</span>':''}</span><span style="display:inline-flex;align-items:center;gap:10px">${p.pin&&!cfg.started?`<button class="linkbtn" onclick="if(confirm('Reset PIN for ${escapeAttr(p.name)}? They can set a new one.'))resetPin('${draftId}',${i})">Reset PIN</button>`:''}<span class="badge ${p.submitted?'done':'waiting'}">${p.submitted?'Submitted':'Waiting'}</span></span></li>`).join('');
 
   let html = `
     <h2>${cfg.type==='snake'?'Snake':'Normal'} draft · ${cfg.players.length} players · ${cfg.rounds} rounds</h2>
@@ -324,9 +326,82 @@ function renderDraftHome(draftId, cfg){
 function openRankings(draftId){
   const sel=document.getElementById('whoSel'); const idx=sel.value;
   if(idx==='') { sel.focus(); return; }
-  sGet(draftId).then(cfg=>buildRankingForm(draftId, parseInt(idx), cfg)).catch(renderDbError);
+  sGet(draftId).then(cfg=>{
+    const p=cfg.players[parseInt(idx)];
+    if(!p.pin){ return renderSetPin(draftId, parseInt(idx), cfg); }
+    return renderVerifyPin(draftId, parseInt(idx), cfg);
+  }).catch(renderDbError);
 }
 window.openRankings=openRankings;
+
+/* ---------- PIN screens ---------- */
+function renderSetPin(draftId, idx, cfg){
+  const p=cfg.players[idx];
+  app.innerHTML=`
+    <button class="secondary" onclick="route()" style="margin-bottom:14px">← Back</button>
+    <h2>Welcome, ${escapeHtml(p.name)}</h2>
+    <p class="sub">Set a 4-digit PIN to claim your name. You'll enter it whenever you come back to view or edit your rankings.</p>
+    <div class="card">
+      <label>Choose a 4-digit PIN</label>
+      <input type="password" id="pinA" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off">
+      <label>Confirm PIN</label>
+      <input type="password" id="pinB" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off">
+      <div id="pinErr"></div>
+      <button onclick="savePin('${draftId}',${idx})">Set PIN &amp; Continue →</button>
+      <p class="hint" style="margin-top:12px;margin-bottom:0">This is light protection to stop others from picking your name — not high security. Don't reuse an important PIN.</p>
+    </div>`;
+  window.scrollTo(0,0);
+  document.getElementById('pinA').focus();
+}
+async function savePin(draftId, idx){
+  const a=(document.getElementById('pinA').value||'').trim();
+  const b=(document.getElementById('pinB').value||'').trim();
+  const err=document.getElementById('pinErr');
+  if(!/^\d{4}$/.test(a)){ err.innerHTML=`<p class="err">PIN must be exactly 4 digits.</p>`; return; }
+  if(a!==b){ err.innerHTML=`<p class="err">The two PINs don't match.</p>`; return; }
+  let cfg; try { cfg=await sGet(draftId); } catch(e){ return renderDbError(e); }
+  if(cfg.players[idx].pin){ // someone claimed it in the meantime
+    return renderVerifyPin(draftId, idx, cfg);
+  }
+  cfg.players[idx].pin=a;
+  try { await sSet(draftId,cfg); } catch(e){ return renderDbError(e); }
+  buildRankingForm(draftId, idx, cfg);
+}
+window.savePin=savePin;
+
+function renderVerifyPin(draftId, idx, cfg){
+  const p=cfg.players[idx];
+  app.innerHTML=`
+    <button class="secondary" onclick="route()" style="margin-bottom:14px">← Back</button>
+    <h2>${escapeHtml(p.name)}</h2>
+    <p class="sub">Enter your PIN to ${p.submitted?'view or edit':'enter'} your rankings.</p>
+    <div class="card">
+      <label>Your 4-digit PIN</label>
+      <input type="password" id="pinV" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off" onkeydown="if(event.key==='Enter')verifyPin('${draftId}',${idx})">
+      <div id="pinErr"></div>
+      <button onclick="verifyPin('${draftId}',${idx})">Continue →</button>
+      <p class="hint" style="margin-top:12px;margin-bottom:0">Forgot it? Ask the organizer to reset your PIN from the status list.</p>
+    </div>`;
+  window.scrollTo(0,0);
+  document.getElementById('pinV').focus();
+}
+async function verifyPin(draftId, idx){
+  const v=(document.getElementById('pinV').value||'').trim();
+  let cfg; try { cfg=await sGet(draftId); } catch(e){ return renderDbError(e); }
+  const p=cfg.players[idx];
+  if(!p.pin){ return renderSetPin(draftId, idx, cfg); } // was reset
+  if(v!==p.pin){ document.getElementById('pinErr').innerHTML=`<p class="err">Incorrect PIN.</p>`; return; }
+  buildRankingForm(draftId, idx, cfg);
+}
+window.verifyPin=verifyPin;
+
+async function resetPin(draftId, idx){
+  let cfg; try { cfg=await sGet(draftId); } catch(e){ return renderDbError(e); }
+  cfg.players[idx].pin=null;
+  try { await sSet(draftId,cfg); } catch(e){ return renderDbError(e); }
+  route();
+}
+window.resetPin=resetPin;
 
 /* ---------- Ranking form ---------- */
 function buildRankingForm(draftId, idx, cfg){
@@ -393,6 +468,7 @@ function renderResults(cfg){
 /* ---------- Utils ---------- */
 function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 function copyLink(link,btn){ navigator.clipboard.writeText(link).then(()=>{ const t=btn.textContent; btn.textContent='Copied'; setTimeout(()=>btn.textContent=t,1200); }).catch(()=>{}); }
 window.copyLink=copyLink;
 
