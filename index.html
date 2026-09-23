@@ -93,7 +93,7 @@
 
   .rank-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .rank-num { width: 26px; text-align: right; color: var(--dim); font-size: 13px; flex-shrink: 0; font-family: var(--mono); }
-  .rank-row input { margin-bottom: 0; }
+  .rank-row input, .rank-row select { margin-bottom: 0; }
 
   .link-box { display: flex; gap: 8px; align-items: center; }
   .link-box input { margin-bottom: 0; font-family: var(--mono); font-size: 13px; color: var(--accent); }
@@ -215,10 +215,11 @@ window.route = route;
 
 /* ---------- Setup ---------- */
 let setupNames = [];
+let setupPool = [];
 function renderSetup(){
   app.innerHTML = `
     <h2>New draft</h2>
-    <p class="sub">Enter your players, pick the format, and you'll get one link to share with everyone.</p>
+    <p class="sub">Enter who's drafting and the pool of players they'll draft from. You'll get one link to share with everyone.</p>
     <div class="card">
       <div class="row2">
         <div><label>Draft type</label>
@@ -227,18 +228,26 @@ function renderSetup(){
             <button data-type="normal">Normal</button>
           </div>
         </div>
-        <div><label>Rounds (picks per player)</label>
-          <input type="number" id="numRounds" min="1" max="25" value="5"></div>
+        <div><label>Rounds (picks per person)</label>
+          <input type="number" id="numRounds" min="1" max="50" value="5"></div>
       </div>
       <p class="hint">Snake reverses order each round (1→N, N→1). Normal keeps the same order every round.</p>
 
-      <label>Players</label>
+      <label>Drafters — the people making picks</label>
       <div class="link-box" style="margin-bottom:8px">
         <input type="text" id="nameInput" placeholder="Type a name and press Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addName();}">
         <button class="secondary" type="button" onclick="addName()">Add</button>
       </div>
       <div class="namechips" id="chips"></div>
-      <p class="hint">Add everyone who's drafting. They'll choose their name from a dropdown when they open the link.</p>
+      <p class="hint">They'll choose their name from a dropdown when they open the link.</p>
+
+      <label style="margin-top:6px">Draftable pool — the players being drafted</label>
+      <div class="link-box" style="margin-bottom:8px">
+        <input type="text" id="poolInput" placeholder="Type a name and press Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addPool();}">
+        <button class="secondary" type="button" onclick="addPool()">Add</button>
+      </div>
+      <div class="namechips" id="poolChips"></div>
+      <p class="hint" id="poolHint">Everyone ranks these. Rankings will have one slot per pool player.</p>
 
       <div id="setupErr"></div>
       <button onclick="createDraft()">Create Draft &amp; Get Link</button>
@@ -246,12 +255,18 @@ function renderSetup(){
   let type='snake';
   document.querySelectorAll('#typeToggle button').forEach(b=>{ b.onclick=()=>{ document.querySelectorAll('#typeToggle button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); type=b.dataset.type; }; });
   window._type=()=>type;
-  renderChips();
+  renderChips(); renderPoolChips();
   document.getElementById('nameInput').focus();
 }
 function renderChips(){
   const el=document.getElementById('chips'); if(!el) return;
-  el.innerHTML = setupNames.map((n,i)=>`<span class="chip">${escapeHtml(n)}<button type="button" onclick="removeName(${i})" aria-label="remove">×</button></span>`).join('') || `<span class="hint" style="margin:0">No players added yet.</span>`;
+  el.innerHTML = setupNames.map((n,i)=>`<span class="chip">${escapeHtml(n)}<button type="button" onclick="removeName(${i})" aria-label="remove">×</button></span>`).join('') || `<span class="hint" style="margin:0">No drafters added yet.</span>`;
+}
+function renderPoolChips(){
+  const el=document.getElementById('poolChips'); if(!el) return;
+  el.innerHTML = setupPool.map((n,i)=>`<span class="chip">${escapeHtml(n)}<button type="button" onclick="removePool(${i})" aria-label="remove">×</button></span>`).join('') || `<span class="hint" style="margin:0">No pool players added yet.</span>`;
+  const h=document.getElementById('poolHint');
+  if(h) h.textContent = setupPool.length ? `Everyone ranks these ${setupPool.length}. Rankings will have ${setupPool.length} slot${setupPool.length===1?'':'s'}.` : 'Everyone ranks these. Rankings will have one slot per pool player.';
 }
 function addName(){
   const inp=document.getElementById('nameInput'); const v=(inp.value||'').trim();
@@ -260,21 +275,33 @@ function addName(){
   setupNames.push(v); inp.value=''; renderChips(); inp.focus();
 }
 function removeName(i){ setupNames.splice(i,1); renderChips(); }
-window.addName=addName; window.removeName=removeName;
+function addPool(){
+  const inp=document.getElementById('poolInput'); const v=(inp.value||'').trim();
+  if(!v) return;
+  if(setupPool.some(n=>n.toLowerCase()===v.toLowerCase())){ inp.value=''; return; }
+  setupPool.push(v); inp.value=''; renderPoolChips(); inp.focus();
+}
+function removePool(i){ setupPool.splice(i,1); renderPoolChips(); }
+window.addName=addName; window.removeName=removeName; window.addPool=addPool; window.removePool=removePool;
 
 async function createDraft(){
   const rounds=parseInt(document.getElementById('numRounds').value);
   const type=window._type();
   const err=document.getElementById('setupErr');
-  if(setupNames.length<2){ err.innerHTML=`<p class="err">Add at least 2 players.</p>`; return; }
-  if(!rounds||rounds<1||rounds>25){ err.innerHTML=`<p class="err">Enter 1–25 rounds.</p>`; return; }
+  if(setupNames.length<2){ err.innerHTML=`<p class="err">Add at least 2 drafters.</p>`; return; }
+  if(setupPool.length<1){ err.innerHTML=`<p class="err">Add at least 1 player to the draftable pool.</p>`; return; }
+  if(!rounds||rounds<1||rounds>50){ err.innerHTML=`<p class="err">Enter 1–50 rounds.</p>`; return; }
+  const totalPicks=rounds*setupNames.length;
+  if(totalPicks>setupPool.length){
+    err.innerHTML=`<p class="err">Not enough pool players: ${setupNames.length} drafters × ${rounds} rounds = ${totalPicks} picks, but only ${setupPool.length} in the pool. Reduce rounds or add players.</p>`; return;
+  }
   const id=newId();
-  const cfg={ id, type, rounds,
+  const cfg={ id, type, rounds, pool: setupPool.slice(),
     players: setupNames.map(n=>({ name:n, submitted:false, rankings:[] })),
     started:false, order:null, results:null };
   try { await sSet(id,cfg); }
   catch(e){ return renderDbError(e); }
-  setupNames=[];
+  setupNames=[]; setupPool=[];
   window.location.hash='draft='+id; route();
 }
 window.createDraft=createDraft;
@@ -404,26 +431,60 @@ async function resetPin(draftId, idx){
 window.resetPin=resetPin;
 
 /* ---------- Ranking form ---------- */
+let RANK = { draftId:null, idx:null, pool:[], picks:[] };
 function buildRankingForm(draftId, idx, cfg){
   const p=cfg.players[idx];
-  const existing=p.rankings||[];
-  const rows=Array.from({length:25},(_,i)=>`<div class="rank-row"><span class="rank-num">${i+1}</span><input type="text" id="rank_${i}" value="${escapeHtml(existing[i]||'')}" placeholder="Choice ${i+1}"></div>`).join('');
+  const pool=(cfg.pool||[]).slice();
+  const n=pool.length;
+  // seed current picks from existing rankings (keep only names still in pool)
+  const existing=(p.rankings||[]).filter(r=>pool.some(pl=>pl.toLowerCase()===String(r).toLowerCase()));
+  RANK={ draftId, idx, pool, picks: Array.from({length:n},(_,i)=>existing[i]||'') };
   app.innerHTML = `
     <button class="secondary" onclick="route()" style="margin-bottom:14px">← Back</button>
-    <h2>${escapeHtml(p.name)} — your top 25</h2>
-    <p class="sub">Rank in order (1 = most wanted). Nothing is required — leave blanks if you like.</p>
+    <h2>${escapeHtml(p.name)} — your rankings</h2>
+    <p class="sub">Rank the ${n} player${n===1?'':'s'} in order (1 = most wanted). Nothing is required — leave slots blank if you like.</p>
     <div class="card">
-      ${rows}
+      <div class="btn-row" style="margin-bottom:14px">
+        <button class="secondary" type="button" onclick="autofillRank()">Auto-fill remaining (pool order)</button>
+        <button class="secondary" type="button" onclick="clearRank()">Clear all</button>
+      </div>
+      <div id="rankSlots"></div>
       <div id="rankErr"></div>
       <button onclick="submitRankings('${draftId}',${idx})">Submit Rankings</button>
     </div>`;
+  renderRankSlots();
   window.scrollTo(0,0);
 }
+function renderRankSlots(){
+  const el=document.getElementById('rankSlots'); if(!el) return;
+  const chosen=new Set(RANK.picks.filter(Boolean).map(x=>x.toLowerCase()));
+  el.innerHTML = RANK.picks.map((cur,i)=>{
+    const opts=['<option value="">— none —</option>'].concat(
+      RANK.pool.map(pl=>{
+        const taken = chosen.has(pl.toLowerCase()) && pl.toLowerCase()!==String(cur).toLowerCase();
+        const sel = pl.toLowerCase()===String(cur).toLowerCase() ? ' selected' : '';
+        return `<option value="${escapeHtml(pl)}"${sel}${taken?' disabled':''}>${escapeHtml(pl)}${taken?' (taken)':''}</option>`;
+      })
+    ).join('');
+    return `<div class="rank-row"><span class="rank-num">${i+1}</span><select onchange="setRankPick(${i}, this.value)">${opts}</select></div>`;
+  }).join('');
+}
+function setRankPick(i, val){ RANK.picks[i]=val; renderRankSlots(); }
+function autofillRank(){
+  const chosen=new Set(RANK.picks.filter(Boolean).map(x=>x.toLowerCase()));
+  const remaining=RANK.pool.filter(pl=>!chosen.has(pl.toLowerCase()));
+  let r=0;
+  for(let i=0;i<RANK.picks.length && r<remaining.length;i++){ if(!RANK.picks[i]){ RANK.picks[i]=remaining[r++]; } }
+  renderRankSlots();
+}
+function clearRank(){ RANK.picks=RANK.picks.map(()=>''); renderRankSlots(); }
+window.setRankPick=setRankPick; window.autofillRank=autofillRank; window.clearRank=clearRank;
+
 async function submitRankings(draftId, idx){
   let cfg; try { cfg=await sGet(draftId); } catch(e){ return renderDbError(e); }
   if(!cfg) return;
   if(cfg.started){ document.getElementById('rankErr').innerHTML=`<p class="err">The draft already ran — rankings are locked.</p>`; return; }
-  const rankings=[]; for(let i=0;i<25;i++){ rankings.push((document.getElementById('rank_'+i).value||'').trim()); }
+  const rankings=RANK.picks.map(x=>(x||'').trim()).filter(Boolean);
   cfg.players[idx].rankings=rankings; cfg.players[idx].submitted=true;
   try { await sSet(draftId,cfg); } catch(e){ return renderDbError(e); }
   route();
