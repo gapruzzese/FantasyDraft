@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Draft Simulator</title>
+<style>
+  :root {
+    /* LIGHT GREEN (default) */
+    --bg: #f1f7f1;
+    --panel: #ffffff;
+    --panel-2: #eef5ee;
+    --line: #cfe3cf;
+    --ink: #14261a;
+    --dim: #5d7361;
+    --accent: #2e7d46;
+    --accent-2: #3fa15e;
+    --accent-ink: #16532c;
+    --field: #f7fbf7;
+    --pos: #2e8b57;
+    --neg: #c0392b;
+    --gold: #c99a2e;
+    --shadow: 0 1px 2px rgba(20,38,26,.05);
+    --shadow-lg: 0 8px 24px rgba(46,125,70,.14);
+    --mono: 'SFMono-Regular', ui-monospace, 'Menlo', 'Consolas', monospace;
+    --disp: 'Archivo Black', 'Arial Black', system-ui, sans-serif;
+    --body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  html[data-theme="dark"] {
+    --bg: #0d1611;
+    --panel: #14201a;
+    --panel-2: #1a2a21;
+    --line: #26382d;
+    --ink: #e6f0e9;
+    --dim: #8ba392;
+    --accent: #47c877;
+    --accent-2: #5bd98a;
+    --accent-ink: #bff3d2;
+    --field: #0f1a14;
+    --pos: #57d98a;
+    --neg: #ff6b6b;
+    --gold: #f5c451;
+    --shadow: 0 1px 2px rgba(0,0,0,.3);
+    --shadow-lg: 0 10px 26px rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(circle at 12% -8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 42%),
+      radial-gradient(circle at 92% -4%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 38%),
+      var(--bg);
+    color: var(--ink); font-family: var(--body); line-height: 1.5; min-height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 22px 18px 80px; }
+
+  header { display: flex; align-items: center; gap: 13px; padding: 4px 0 18px; }
+  .logo { width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0; position: relative;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: var(--shadow); }
+  .logo::before { content:''; position:absolute; inset:0; margin:auto; width:16px; height:16px; border:3px solid #fff; border-radius:50%; opacity:.9; }
+  .logo::after { content:''; position:absolute; left:50%; top:50%; width:3px; height:11px; background:#fff; transform: translate(-50%,-2px) rotate(35deg); transform-origin: top; opacity:.9; }
+  .brand h1 { font-family: var(--disp); font-size: 19px; letter-spacing: -.3px; text-transform: uppercase; color: var(--accent-ink); line-height: 1.05; }
+  .brand .tag { font-size: 12px; color: var(--dim); letter-spacing: 2px; text-transform: uppercase; }
+  .theme-btn { margin-left: auto; background: var(--panel); border: 1px solid var(--line); color: var(--dim); border-radius: 20px; padding: 7px 13px; font-size: 12px; cursor: pointer; font-family: var(--mono); letter-spacing: .5px; display: inline-flex; align-items: center; gap: 6px; }
+  .theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .bar { height: 3px; border-radius: 3px; margin-bottom: 22px; background: linear-gradient(90deg, var(--accent), var(--accent-2) 60%, transparent); }
+
+  h2 { font-size: 18px; margin: 0 0 12px; color: var(--accent-ink); }
+  .sub { color: var(--dim); font-size: 14px; margin-bottom: 22px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  label { display: block; font-size: 13px; color: var(--dim); margin-bottom: 6px; font-weight: 500; }
+  input[type=text], input[type=number], select, textarea {
+    width: 100%; background: var(--field); border: 1px solid var(--line); border-radius: 9px; color: var(--ink);
+    padding: 11px 12px; font-size: 15px; margin-bottom: 12px; font-family: var(--body);
+  }
+  textarea { resize: vertical; min-height: 120px; line-height: 1.6; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  select { appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%232e7d46' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+  button { background: var(--accent); color: #fff; border: none; border-radius: 9px; padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer; transition: filter .15s; font-family: var(--body); }
+  button:hover { filter: brightness(1.06); }
+  button:disabled { background: var(--line); color: var(--dim); cursor: not-allowed; filter: none; }
+  button.secondary { background: var(--panel-2); color: var(--accent-ink); border: 1px solid var(--line); }
+  button.secondary:hover { border-color: var(--accent); }
+
+  .toggle { display: flex; gap: 8px; margin-bottom: 6px; }
+  .toggle button { flex: 1; background: var(--field); border: 1px solid var(--line); color: var(--dim); }
+  .toggle button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .hint { font-size: 13px; color: var(--dim); margin: -2px 0 14px; }
+  .err { color: var(--neg); font-size: 14px; margin-bottom: 12px; }
+  .row2 { display: flex; gap: 12px; } .row2 > div { flex: 1; }
+
+  .rank-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .rank-num { width: 26px; text-align: right; color: var(--dim); font-size: 13px; flex-shrink: 0; font-family: var(--mono); }
+  .rank-row input { margin-bottom: 0; }
+
+  .link-box { display: flex; gap: 8px; align-items: center; }
+  .link-box input { margin-bottom: 0; font-family: var(--mono); font-size: 13px; color: var(--accent); }
+
+  .status-list { list-style: none; }
+  .status-list li { display: flex; justify-content: space-between; align-items: center; padding: 11px 2px; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .status-list li:last-child { border: none; }
+  .badge { font-size: 12px; padding: 3px 11px; border-radius: 12px; font-weight: 600; }
+  .badge.done { background: color-mix(in srgb, var(--pos) 18%, transparent); color: var(--pos); }
+  .badge.waiting { background: color-mix(in srgb, var(--gold) 20%, transparent); color: var(--gold); }
+
+  .results-round { margin-bottom: 18px; }
+  .results-round h3 { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .pick { display: flex; align-items: center; gap: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px 14px; margin-bottom: 6px; }
+  .pick-num { background: var(--accent); color: #fff; font-family: var(--mono); font-size: 12px; font-weight: 600; min-width: 34px; height: 30px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0 6px; }
+  .pick-player { font-weight: 600; flex: 1; color: var(--ink); }
+  .pick-owner { color: var(--dim); font-size: 13px; }
+
+  .order-list { list-style: none; }
+  .order-list li { padding: 8px 2px; font-size: 15px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; }
+  .order-list li:last-child { border: none; }
+  .order-list .on { font-family: var(--mono); color: var(--accent); min-width: 24px; }
+
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .spinner { text-align: center; padding: 50px 20px; color: var(--dim); }
+  .spin-ring { width: 42px; height: 42px; margin: 0 auto 16px; border-radius: 50%; border: 4px solid var(--line); border-top-color: var(--accent); animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .warn { background: color-mix(in srgb, var(--gold) 14%, transparent); border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent); border-radius: 10px; padding: 13px 15px; font-size: 14px; margin-bottom: 16px; color: var(--ink); }
+  .warn code { font-family: var(--mono); background: var(--field); padding: 1px 5px; border-radius: 4px; }
+  .big { font-family: var(--disp); font-size: 22px; text-transform: uppercase; color: var(--accent-ink); margin-bottom: 6px; }
+  .center { text-align: center; }
+  .namechips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+  .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px; padding: 3px 10px 3px 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; }
+  .chip button { background: none; border: none; color: var(--dim); padding: 0; font-size: 15px; line-height: 1; cursor: pointer; }
+  .chip button:hover { color: var(--neg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true"></div>
+    <div class="brand"><h1>Draft Simulator</h1><div class="tag">Snake &amp; Normal Drafts</div></div>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙 Dark</button>
+  </header>
+  <div class="bar"></div>
+  <div id="app"><div class="spinner"><div class="spin-ring"></div>Loading…</div></div>
+</div>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ============================================================
+//  PASTE YOUR FIREBASE CONFIG HERE
+//  Firebase console → Project settings → Your apps → Config
+// ============================================================
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+// ============================================================
+
+let db = null, configOK = false;
+try {
+  if (!firebaseConfig.apiKey.startsWith("YOUR_")) {
+    db = getFirestore(initializeApp(firebaseConfig));
+    configOK = true;
+  }
+} catch (e) { console.error("Firebase init failed", e); }
+
+async function sGet(key){ if(!db) return null; try { const s=await getDoc(doc(db,"drafts",key)); return s.exists()?s.data().payload:null; } catch(e){ console.error(e); throw e; } }
+async function sSet(key,val){ if(!db) return null; try { await setDoc(doc(db,"drafts",key),{payload:val}); return true; } catch(e){ console.error(e); throw e; } }
+
+/* ---------- Theme ---------- */
+function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); const b=document.getElementById('themeBtn'); b.textContent = t==='dark' ? '☀ Light' : '🌙 Dark'; try{ document.cookie='dtheme='+t+';path=/;max-age=31536000'; }catch(e){} }
+function toggleTheme(){ const cur=document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light'; applyTheme(cur==='dark'?'light':'dark'); }
+(function initTheme(){ let t='light'; try{ const m=document.cookie.match(/dtheme=(\w+)/); if(m) t=m[1]; }catch(e){} applyTheme(t); })();
+window.toggleTheme = toggleTheme;
+
+/* ---------- URL params ---------- */
+function getParams(){ const p=new URLSearchParams(window.location.hash.slice(1)); return { draft:p.get('draft') }; }
+function draftLink(id){ return window.location.href.split('#')[0] + '#draft=' + id; }
+function newId(){ return Math.random().toString(36).slice(2,9); }
+
+const app = document.getElementById('app');
+
+/* ---------- Router ---------- */
+async function route(){
+  if(!configOK) return renderNeedsConfig();
+  const { draft } = getParams();
+  if(!draft) return renderSetup();
+  let cfg;
+  try { cfg = await sGet(draft); }
+  catch(e){ return renderDbError(e); }
+  if(!cfg){ app.innerHTML = `<div class="card"><p class="err">Draft not found.</p><button onclick="goHome()">Create a new draft</button></div>`; return; }
+  return renderDraftHome(draft, cfg);
+}
+function goHome(){ window.location.hash=''; route(); }
+window.goHome = goHome;
+
+function renderNeedsConfig(){
+  app.innerHTML = `<div class="warn">This app needs your Firebase config before it will work. Open <code>draft-simulator.html</code> and paste your project config into the marked block near the top of the &lt;script&gt;, then reload.</div>`;
+}
+function renderDbError(e){
+  app.innerHTML = `<div class="card"><p class="big">Database unavailable</p>
+    <p class="sub">The app couldn't reach Firestore. If your test-mode rules expired, open Firebase → Firestore → Rules, allow read/write on <code>drafts</code>, and Publish. Then reload.</p>
+    <p class="hint" style="word-break:break-all">${escapeHtml(String(e&&e.message||e))}</p>
+    <button class="secondary" onclick="route()">Try again</button></div>`;
+}
+window.route = route;
+
+/* ---------- Setup ---------- */
+let setupNames = [];
+function renderSetup(){
+  app.innerHTML = `
+    <h2>New draft</h2>
+    <p class="sub">Enter your players, pick the format, and you'll get one link to share with everyone.</p>
+    <div class="card">
+      <div class="row2">
+        <div><label>Draft type</label>
+          <div class="toggle" id="typeToggle">
+            <button class="active" data-type="snake">Snake</button>
+            <button data-type="normal">Normal</button>
+          </div>
+        </div>
+        <div><label>Rounds (picks per player)</label>
+          <input type="number" id="numRounds" min="1" max="25" value="5"></div>
+      </div>
+      <p class="hint">Snake reverses order each round (1→N, N→1). Normal keeps the same order every round.</p>
+
+      <label>Players</label>
+      <div class="link-box" style="margin-bottom:8px">
+        <input type="text" id="nameInput" placeholder="Type a name and press Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addName();}">
+        <button class="secondary" type="button" onclick="addName()">Add</button>
+      </div>
+      <div class="namechips" id="chips"></div>
+      <p class="hint">Add everyone who's drafting. They'll choose their name from a dropdown when they open the link.</p>
+
+      <div id="setupErr"></div>
+      <button onclick="createDraft()">Create Draft &amp; Get Link</button>
+    </div>`;
+  let type='snake';
+  document.querySelectorAll('#typeToggle button').forEach(b=>{ b.onclick=()=>{ document.querySelectorAll('#typeToggle button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); type=b.dataset.type; }; });
+  window._type=()=>type;
+  renderChips();
+  document.getElementById('nameInput').focus();
+}
+function renderChips(){
+  const el=document.getElementById('chips'); if(!el) return;
+  el.innerHTML = setupNames.map((n,i)=>`<span class="chip">${escapeHtml(n)}<button type="button" onclick="removeName(${i})" aria-label="remove">×</button></span>`).join('') || `<span class="hint" style="margin:0">No players added yet.</span>`;
+}
+function addName(){
+  const inp=document.getElementById('nameInput'); const v=(inp.value||'').trim();
+  if(!v) return;
+  if(setupNames.some(n=>n.toLowerCase()===v.toLowerCase())){ inp.value=''; return; }
+  setupNames.push(v); inp.value=''; renderChips(); inp.focus();
+}
+function removeName(i){ setupNames.splice(i,1); renderChips(); }
+window.addName=addName; window.removeName=removeName;
+
+async function createDraft(){
+  const rounds=parseInt(document.getElementById('numRounds').value);
+  const type=window._type();
+  const err=document.getElementById('setupErr');
+  if(setupNames.length<2){ err.innerHTML=`<p class="err">Add at least 2 players.</p>`; return; }
+  if(!rounds||rounds<1||rounds>25){ err.innerHTML=`<p class="err">Enter 1–25 rounds.</p>`; return; }
+  const id=newId();
+  const cfg={ id, type, rounds,
+    players: setupNames.map(n=>({ name:n, submitted:false, rankings:[] })),
+    started:false, order:null, results:null };
+  try { await sSet(id,cfg); }
+  catch(e){ return renderDbError(e); }
+  setupNames=[];
+  window.location.hash='draft='+id; route();
+}
+window.createDraft=createDraft;
+
+/* ---------- Draft home (shared link lands here) ---------- */
+function renderDraftHome(draftId, cfg){
+  const submitted=cfg.players.filter(p=>p.submitted).length;
+  const all=submitted===cfg.players.length;
+  const link=draftLink(draftId);
+
+  const statusRows=cfg.players.map(p=>`<li><span>${escapeHtml(p.name)}</span><span class="badge ${p.submitted?'done':'waiting'}">${p.submitted?'Submitted':'Waiting'}</span></li>`).join('');
+
+  let html = `
+    <h2>${cfg.type==='snake'?'Snake':'Normal'} draft · ${cfg.players.length} players · ${cfg.rounds} rounds</h2>
+    <div class="card">
+      <label>Share this one link with everyone</label>
+      <div class="link-box">
+        <input type="text" readonly value="${link}" onclick="this.select()">
+        <button class="secondary" onclick="copyLink('${link}', this)">Copy</button>
+      </div>
+      <p class="hint" style="margin-bottom:0">Each player opens it, picks their name, and enters rankings.</p>
+    </div>`;
+
+  if(!cfg.started){
+    html += `
+    <div class="card">
+      <label>I'm entering rankings as…</label>
+      <select id="whoSel">
+        <option value="">— choose your name —</option>
+        ${cfg.players.map((p,i)=>`<option value="${i}">${escapeHtml(p.name)}${p.submitted?' ✓':''}</option>`).join('')}
+      </select>
+      <button onclick="openRankings('${draftId}')">Enter my rankings →</button>
+    </div>`;
+  }
+
+  html += `
+    <div class="card">
+      <h2 style="margin-top:0">Status (${submitted}/${cfg.players.length} submitted)</h2>
+      <ul class="status-list">${statusRows}</ul>
+      <div class="btn-row" style="margin-top:16px">
+        <button class="secondary" onclick="route()">Refresh</button>
+        <button onclick="runDraft('${draftId}')" ${all?'':'disabled'}>${cfg.started?'Re-run Draft':'Randomize & Run Draft'}</button>
+      </div>
+      ${all?'':'<p class="hint" style="margin-top:10px">Run unlocks once all players have submitted.</p>'}
+    </div>
+    ${cfg.started?renderResults(cfg):''}`;
+  app.innerHTML = html;
+}
+function openRankings(draftId){
+  const sel=document.getElementById('whoSel'); const idx=sel.value;
+  if(idx==='') { sel.focus(); return; }
+  sGet(draftId).then(cfg=>buildRankingForm(draftId, parseInt(idx), cfg)).catch(renderDbError);
+}
+window.openRankings=openRankings;
+
+/* ---------- Ranking form ---------- */
+function buildRankingForm(draftId, idx, cfg){
+  const p=cfg.players[idx];
+  const existing=p.rankings||[];
+  const rows=Array.from({length:25},(_,i)=>`<div class="rank-row"><span class="rank-num">${i+1}</span><input type="text" id="rank_${i}" value="${escapeHtml(existing[i]||'')}" placeholder="Choice ${i+1}"></div>`).join('');
+  app.innerHTML = `
+    <button class="secondary" onclick="route()" style="margin-bottom:14px">← Back</button>
+    <h2>${escapeHtml(p.name)} — your top 25</h2>
+    <p class="sub">Rank in order (1 = most wanted). Nothing is required — leave blanks if you like.</p>
+    <div class="card">
+      ${rows}
+      <div id="rankErr"></div>
+      <button onclick="submitRankings('${draftId}',${idx})">Submit Rankings</button>
+    </div>`;
+  window.scrollTo(0,0);
+}
+async function submitRankings(draftId, idx){
+  let cfg; try { cfg=await sGet(draftId); } catch(e){ return renderDbError(e); }
+  if(!cfg) return;
+  if(cfg.started){ document.getElementById('rankErr').innerHTML=`<p class="err">The draft already ran — rankings are locked.</p>`; return; }
+  const rankings=[]; for(let i=0;i<25;i++){ rankings.push((document.getElementById('rank_'+i).value||'').trim()); }
+  cfg.players[idx].rankings=rankings; cfg.players[idx].submitted=true;
+  try { await sSet(draftId,cfg); } catch(e){ return renderDbError(e); }
+  route();
+}
+window.submitRankings=submitRankings;
+
+/* ---------- Draft engine ---------- */
+async function runDraft(draftId){
+  let cfg; try { cfg=await sGet(draftId); } catch(e){ return renderDbError(e); }
+  if(!cfg || !cfg.players.every(p=>p.submitted)) return;
+  const order=shuffle(cfg.players.map((_,i)=>i));
+  const picks=[];
+  for(let r=0;r<cfg.rounds;r++){ let seq=order.slice(); if(cfg.type==='snake'&&r%2===1) seq=seq.reverse(); for(const pi of seq) picks.push({round:r+1,player:pi}); }
+  const drafted=new Set(); const results=[];
+  for(let i=0;i<picks.length;i++){
+    const pk=picks[i]; const ranks=cfg.players[pk.player].rankings.filter(r=>r&&r.trim());
+    let chosen=null;
+    for(const r of ranks){ if(!drafted.has(r.trim().toLowerCase())){ chosen=r.trim(); break; } }
+    if(chosen) drafted.add(chosen.toLowerCase());
+    results.push({ overall:i+1, round:pk.round, player:pk.player, pick: chosen||'(no available ranked choice)' });
+  }
+  cfg.started=true; cfg.order=order; cfg.results=results;
+  try { await sSet(draftId,cfg); } catch(e){ return renderDbError(e); }
+  route();
+}
+window.runDraft=runDraft;
+
+function renderResults(cfg){
+  const orderList=cfg.order.map((pi,i)=>`<li><span class="on">${i+1}.</span> ${escapeHtml(cfg.players[pi].name)}</li>`).join('');
+  let html=`<div class="card"><h2 style="margin-top:0">Randomized draft order</h2><ul class="order-list">${orderList}</ul></div>`;
+  html+=`<div class="card"><h2 style="margin-top:0">Results</h2>`;
+  const byRound={}; cfg.results.forEach(r=>{ (byRound[r.round]=byRound[r.round]||[]).push(r); });
+  Object.keys(byRound).sort((a,b)=>a-b).forEach(rd=>{
+    html+=`<div class="results-round"><h3>Round ${rd}</h3>`;
+    byRound[rd].forEach(r=>{ html+=`<div class="pick"><span class="pick-num">${r.overall}</span><span class="pick-player">${escapeHtml(r.pick)}</span><span class="pick-owner">${escapeHtml(cfg.players[r.player].name)}</span></div>`; });
+    html+=`</div>`;
+  });
+  html+=`</div>`;
+  return html;
+}
+
+/* ---------- Utils ---------- */
+function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function copyLink(link,btn){ navigator.clipboard.writeText(link).then(()=>{ const t=btn.textContent; btn.textContent='Copied'; setTimeout(()=>btn.textContent=t,1200); }).catch(()=>{}); }
+window.copyLink=copyLink;
+
+window.addEventListener('hashchange', route);
+route();
+</script>
+</body>
+</html>
